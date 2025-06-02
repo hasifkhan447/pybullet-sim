@@ -7,6 +7,11 @@ from scipy.interpolate import make_interp_spline
 import time
 import matplotlib.pyplot as plt
 
+from scipy.signal import butter, filtfilt
+
+
+
+
 
 # --- PyBullet Setup ---
 physicsClient = p.connect(p.GUI)
@@ -15,7 +20,7 @@ p.setAdditionalSearchPath(pybullet_data.getDataPath())
 planeId = p.loadURDF("plane.urdf")
 
 # robotId = p.loadURDF("kuka_iiwa/model.urdf", useFixedBase=True)
-robotId = p.loadURDF("/home/hak/External/Games/shared-win-folder/final_arm/urdf/final_arm.urdf", useFixedBase=True)
+robotId = p.loadURDF("/home/hak/External/Games/shared-win-folder/final_arm1/urdf/final_arm1.urdf", useFixedBase=True)
 
 # --- Joint Info ---
 num_joints = p.getNumJoints(robotId)
@@ -23,24 +28,81 @@ joint_indices = [i for i in range(num_joints)]
 
 
 # --- Define 2 Poses (start and end) in Cartesian ---
+# waypoints = np.array([
+#     [1, 0, 0.5],
+#     [0.5, 0.7, 0],
+#     [-1, 0.6, 1],
+# ])
+# print(waypoints)
+#
+#
+#
+#
+#
+# t = np.linspace(0,1,len(waypoints))
+#
+# duration = 1.0  # seconds
+# steps_per_second = 240
+# total_steps = int(duration * steps_per_second)
+# spline = make_interp_spline(t, waypoints, k=2, axis=0)
+#
+# times = np.linspace(0, 1, total_steps)
+# trajectory = spline(times)
+
+def quintic_interp(p0, p1, v0, v1, a0, a1, T, steps):
+    t = np.linspace(0, T, steps)
+    traj = np.zeros((steps, 3))
+    for i in range(3):  # For x, y, z
+        a = p0[i]
+        b = v0[i]
+        c = a0[i] / 2
+        d = (20*p1[i] - 20*p0[i] - (8*v1[i] + 12*v0[i])*T - (3*a0[i] - a1[i])*T**2) / (2*T**3)
+        e = (30*p0[i] - 30*p1[i] + (14*v1[i] + 16*v0[i])*T + (3*a0[i] - 2*a1[i])*T**2) / (2*T**4)
+        f = (12*p1[i] - 12*p0[i] - (6*v1[i] + 6*v0[i])*T - (a0[i] - a1[i])*T**2) / (2*T**5)
+        traj[:, i] = a + b*t + c*t**2 + d*t**3 + e*t**4 + f*t**5
+    return traj
+
+
+def lowpass_filter(data, cutoff=5, fs=240, order=2):
+    nyq = 0.5 * fs
+    norm_cutoff = cutoff / nyq
+    b, a = butter(order, norm_cutoff, btype='low', analog=False)
+    return filtfilt(b, a, data, axis=0)
+
+
+
+# --- Define 3 Cartesian waypoints ---
 waypoints = np.array([
-    [1, 0, 0.3],
-    [0, 1, 0.3],
-    [0, 0, 1],
-    [1, 0.5, 0.3],
-    [0, 0.5, 1]
+    [1, 0, 0.5],
+    [0.5, 0.7, 0],
+    [-1, 0.6, 1],
 ])
-print(waypoints)
-t = np.linspace(0,1,len(waypoints))
+
+duration_per_segment = 2.0  # seconds per segment
+steps_per_second = 240
+steps = int(duration_per_segment * steps_per_second)
+
+full_trajectory = []
+
+for i in range(len(waypoints) - 1):
+    p0 = waypoints[i]
+    p1 = waypoints[i+1]
+    traj = quintic_interp(
+        p0, p1,
+        v0=np.zeros(3), v1=np.zeros(3),
+        a0=np.zeros(3), a1=np.zeros(3),
+        T=duration_per_segment,
+        steps=steps
+    )
+    full_trajectory.append(traj)
+
+trajectory = np.vstack(full_trajectory)  # shape: (steps * (n-1), 3)
+trajectory_filtered = lowpass_filter(trajectory, cutoff=5, fs=steps_per_second)
+trajecotry = trajectory_filtered
 
 
 
 
-
-# --- B-Spline ---
-spline = make_interp_spline(t, waypoints, k=4, axis=0)
-times = np.linspace(0, 1, 100)
-trajectory = spline(times)
 
 
 
@@ -52,55 +114,55 @@ for point in waypoints:
 for i in range(len(trajectory) - 1):
     p.addUserDebugLine(trajectory[i], trajectory[i + 1], [1, 0, 0], lineWidth=2, lifeTime=0)
 
-
-
-# --- Record Data ---
-recorded_joint_angles = []
-
-
 states = []
-
-dt = 1.0 / 240.0
-
-
-for point in waypoints:
-    initial_angles = p.calculateInverseKinematics(robotId, num_joints-1, point)
-    p.setJointMotorControlArray(
-        robotId, joint_indices, p.POSITION_CONTROL, targetPositions=initial_angles,
-    )
-
-
-    for _ in range(500):  # let it settle
-        p.stepSimulation()
-        time.sleep(dt)
-
-
+dt = 1.0 / steps_per_second
 initial_angles = p.calculateInverseKinematics(robotId, num_joints-1, trajectory[0])
+
+kp = 0.5
+kd = 0.5
+
 p.setJointMotorControlArray(
     robotId, joint_indices, p.POSITION_CONTROL, targetPositions=initial_angles,
+    positionGains=[kp]*len(joint_indices),
+    velocityGains=[kd]*len(joint_indices),
 )
 
-
-for _ in range(500):  # let it settle
+for _ in range(int(0.4 *steps_per_second)):  # let it settle
     p.stepSimulation()
     time.sleep(dt)
 
 
 # --- Execute Trajectory ---
 for pos in trajectory:
-    joint_angles = p.calculateInverseKinematics(robotId, num_joints-1, pos)
+    lower_limits = [-3.14] * num_joints
+    upper_limits = [3.14] * num_joints
+    joint_ranges = [6.28] * num_joints
+    rest_poses   = [1.0] * (num_joints - 1) + [1.0]  # encourage last joint movement
+
+    joint_angles = p.calculateInverseKinematics(
+        robotId,
+        num_joints - 1,
+        pos,
+        lowerLimits=lower_limits,
+        upperLimits=upper_limits,
+        jointRanges=joint_ranges,
+        restPoses=rest_poses,
+        maxNumIterations=200,
+        residualThreshold=1e-4
+    )
 
     p.setJointMotorControlArray(
         robotId,
         joint_indices,
         p.POSITION_CONTROL,
-        targetPositions=joint_angles
+        targetPositions=joint_angles,
+        positionGains=[kp]*len(joint_indices),
+        velocityGains=[kd]*len(joint_indices),
     )
 
     p.stepSimulation()
 
 
-    recorded_joint_angles.append(joint_angles)
     states.append(p.getJointStates(robotId, joint_indices))
 
     time.sleep(dt)
@@ -111,9 +173,6 @@ velocities = np.array([[s[i][1] for i in range(len(s))] for s in states])
 torques = np.array([[s[i][3] for i in range(len(s))] for s in states])
 
 
-
-
-joint_id = 0
 time_axis = np.arange(len(positions)) * dt
 
 plt.figure(figsize=(10, 8))
@@ -140,8 +199,6 @@ plt.legend(loc='center left',bbox_to_anchor=(1,0.05))
 plt.grid(True)
 plt.title(f'Joint Accelerations')
 
-
-
 plt.subplot(4, 1, 4)
 for joint_id in range(num_joints):
         plt.plot(time_axis, torques[:, joint_id], label=f"joint {joint_id}")
@@ -157,5 +214,15 @@ plt.show()
 
 
 
-# `recorded_joint_angles` now holds the full trajectory
-print(recorded_joint_angles)
+
+# --- Torque Statistics ---
+for joint_id in range(num_joints):
+    joint_torques = torques[:, joint_id]
+    avg_torque = np.mean(np.abs(joint_torques))
+    max_torque = np.max(np.abs(joint_torques))
+    second_max = np.partition(np.abs(joint_torques), -2)[-2]
+
+    print(f"Joint {joint_id}:")
+    print(f"  Avg Torque     = {avg_torque:.4f}")
+    print(f"  Max Torque     = {max_torque:.4f}")
+    print(f"  2nd Max Torque = {second_max:.4f}")
