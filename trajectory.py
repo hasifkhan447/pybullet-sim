@@ -20,7 +20,7 @@ p.setAdditionalSearchPath(pybullet_data.getDataPath())
 planeId = p.loadURDF("plane.urdf")
 
 # robotId = p.loadURDF("kuka_iiwa/model.urdf", useFixedBase=True)
-robotId = p.loadURDF("/home/hak/External/Games/shared-win-folder/final_arm_material/urdf/final_arm_material.urdf", useFixedBase=True)
+robotId = p.loadURDF("./final_arm_material/urdf/final_arm_material.urdf", useFixedBase=True)
 
 # --- Joint Info ---
 num_joints = p.getNumJoints(robotId)
