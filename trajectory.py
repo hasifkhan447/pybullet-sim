@@ -114,11 +114,6 @@ def go_through_waypoints(waypoints):
             time.sleep(dt)
             states.append(p.getJointStates(robotId, joint_indices))
 
-waypoints = np.array([
-    [0.7, 0, 0.5],
-    [0.3, 1, 1],
-    [-1.2, 0.7, 1.6],
-])
 
 
 effector_link_index = num_joints - 1  # assuming last link is the gripper
@@ -146,13 +141,23 @@ def pickBox(boxId):
 
 def dropBox(boxCID):
     p.removeConstraint(boxCID)
+    for i in range(int(steps_per_second)):
+        p.stepSimulation()
 
 
 
 full_trajectory = []
 
+box_x_len = 0.43
+box_y_len = 0.35
+box_z_len = 0.28
 
-boxId = p.loadURDF("box.urdf", waypoints[0])
+
+waypoints = np.array([
+    [0.7, 0.5, 0.3],
+    [0.3, 1, 1],
+    [-1.2, 0.7, box_z_len+0.2],
+])
 
 orientation = p.getQuaternionFromEuler([-math.pi/2,0,0])
 initial_angles = p.calculateInverseKinematics(
@@ -172,18 +177,49 @@ p.setJointMotorControlArray(
 
 states = []
 
-for i in range(len(waypoints)-1):
+for i in range(len(waypoints)):
     p.addUserDebugLine(waypoints[i], waypoints[i] + np.array([0, 0, 0.1]), [0, 1, 0], lineWidth=50, lifeTime=0)
 
 
 
-boxCID = pickBox(boxId)
 
-go_through_waypoints(waypoints)
 
-dropBox(boxCID)
-for i in range(int(steps_per_second)):
-    p.stepSimulation()
+
+def palletize(waypoints):
+    boxId = p.loadURDF("box.urdf", [0.7, 0.5, 0.3])
+
+    boxCID = pickBox(boxId)
+    go_through_waypoints(waypoints)
+    dropBox(boxCID)
+    go_through_waypoints(waypoints[::-1])
+
+
+
+
+
+
+
+num_stacks = 6
+for i in range(num_stacks):
+    # Bottom-left
+    palletize(waypoints)
+
+    # Bottom-right
+    waypoints[-1][0] += box_x_len
+    palletize(waypoints)
+
+    # Top-right
+    waypoints[-1][1] += box_y_len
+    palletize(waypoints)
+
+    # Top-left
+    waypoints[-1][0] -= box_x_len
+    palletize(waypoints)
+
+    # Move up for next layer
+    waypoints[-1][1] -= box_y_len
+    waypoints[-1][2] += box_z_len
+
 
 
 positions = np.array([[s[i][0] for i in range(len(s))] for s in states])  # shape (timesteps, joints)
