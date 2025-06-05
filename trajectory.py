@@ -74,9 +74,9 @@ def plan_segment(start, end):
     return segment.tolist()
 
 waypoints = np.array([
-    [1, 0, 0.7],
-    [0.5, 0.7, 1],
-    [-1, 0.6, 2],
+    [0.7, 0, 0.5],
+    [0.3, 1, 1],
+    [-1.2, 0.7, 1.6],
 ])
 
 effector_link_index = num_joints - 1  # assuming last link is the gripper
@@ -90,9 +90,9 @@ def pickBox(boxId):
         childLinkIndex=-1,
         jointType=p.JOINT_FIXED,
         jointAxis=[0, 0, 0],
-        parentFramePosition=[0, 0, 0],
+        parentFramePosition=[0, 0.05, 0],
         childFramePosition=[0, 0, 0],
-        childFrameOrientation=[0,0,1,0]
+        childFrameOrientation=p.getQuaternionFromEuler([math.pi/2,0,0])
     )
 
 
@@ -101,7 +101,7 @@ def pickBox(boxId):
     return boxCID
 
 # waypoints *= 0.5
-steps_per_second = 500
+steps_per_second = 1000
 
 dt = 1.0 / steps_per_second
 velocity = 1
@@ -127,6 +127,8 @@ p.setJointMotorControlArray(
     p.POSITION_CONTROL,
     targetPositions=initial_angles
 )
+
+pickBox(boxId)
 
 states = []
 
