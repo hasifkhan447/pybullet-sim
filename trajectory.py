@@ -7,6 +7,9 @@ from scipy.interpolate import make_interp_spline
 import time
 import math
 from plotting import plot_system
+from scipy.spatial.transform import Rotation as R, Slerp
+import numpy as np
+
 
 
 # --- PyBullet Setup ---
@@ -79,11 +82,44 @@ def plan_segment_quintic(start, end, duration=1.0, dt=dt):
 
     return segment.tolist()
 
+def plan_segment_quintic_with_orientation(start_pos, end_pos, start_quat, end_quat, duration=1.0, dt=0.01):
+    t = np.arange(0, duration + dt, dt)
+    T = duration
 
-def go_through_waypoints(waypoints):
+    # Quintic polynomial coefficients (same as yours)
+    a0, a1, a2 = 0, 0, 0
+    a3 = 10 / T**3
+    a4 = -15 / T**4
+    a5 = 6 / T**5
+
+    s = a0 + a1*t + a2*t**2 + a3*t**3 + a4*t**4 + a5*t**5  # scalar 0 to 1
+
+    start_pos, end_pos = np.array(start_pos), np.array(end_pos)
+    segment = start_pos + (end_pos - start_pos) * s[:, None]
+
+    # Orientation interpolation using Slerp
+    key_times = [0, duration]
+    rotations = R.from_quat([start_quat, end_quat])
+    slerp = Slerp(key_times, rotations)
+    orientations = slerp(s * duration).as_quat()
+
+    return segment.tolist(), orientations.tolist()
+
+
+
+
+
+def go_through_waypoints(waypoints, pick_orientation, place_orientation):
     for i in range(len(waypoints)-1):
         # segment_trajectory = plan_segment_constant_velocity(waypoints[i], waypoints[i+1])
-        segment_trajectory = plan_segment_quintic(waypoints[i], waypoints[i+1], duration=1)
+        # segment_trajectory = plan_segment_quintic(waypoints[i], waypoints[i+1], duration=1)
+
+        if i == len(waypoints) - 2:
+            print("Rotating rq")
+            segment_trajectory, orientations = plan_segment_quintic_with_orientation(waypoints[i], waypoints[i+1], pick_orientation, place_orientation, duration=1)
+        else:
+            segment_trajectory, orientations = plan_segment_quintic_with_orientation(waypoints[i], waypoints[i+1], pick_orientation, pick_orientation, duration=1)
+
 
 
         prev_point = waypoints[i]
@@ -93,12 +129,12 @@ def go_through_waypoints(waypoints):
                 p.addUserDebugLine(prev_point, point, [1, 0, 0], lineWidth=2, lifeTime=0)
                 prev_point = point
 
-        for point in segment_trajectory:
+        for idx in range(len(segment_trajectory)):
             joint_angles = p.calculateInverseKinematics(
                 bodyUniqueId=robotId,
                 endEffectorLinkIndex=effector_link_index,
-                targetPosition=point,
-                targetOrientation=orientation,
+                targetPosition=segment_trajectory[idx],
+                targetOrientation=orientations[idx],
                 maxNumIterations=1000,
                 residualThreshold=1e-4
             )
@@ -156,17 +192,17 @@ box_z_len = 0.28
 
 
 waypoints = np.array([
-    [0.7, 0.5, 0.3],
+    [0.7, 0.5, 0.5],
     [0.3, 1, 1],
-    [-1.2, 0.7, box_z_len+0.2],
+    [-1.2, 0.7, box_z_len+0.04],
 ])
 
-orientation = p.getQuaternionFromEuler([-math.pi/2,0,0])
+pick_orientation = p.getQuaternionFromEuler([-math.pi/2,0,0])
 initial_angles = p.calculateInverseKinematics(
     bodyUniqueId=robotId,
     endEffectorLinkIndex=effector_link_index,
     targetPosition=waypoints[0],
-    targetOrientation=orientation
+    targetOrientation=pick_orientation
 )
 
 p.setJointMotorControlArray(
@@ -183,7 +219,7 @@ for i in range(len(waypoints)):
     p.addUserDebugLine(waypoints[i], waypoints[i] + np.array([0, 0, 0.1]), [0, 1, 0], lineWidth=50, lifeTime=0)
 
 
-def palletize(waypoints):
+def palletize(waypoints, pick_orientation, place_orientation):
     boxId = p.loadURDF("box.urdf", waypoints[0])
 
     for i in range(int(steps_per_second)):
@@ -191,27 +227,31 @@ def palletize(waypoints):
 
 
     boxCID = pickBox(boxId)
-    go_through_waypoints(waypoints)
+    go_through_waypoints(waypoints, pick_orientation, place_orientation)
     dropBox(boxCID)
-    go_through_waypoints(waypoints[::-1])
+    go_through_waypoints(waypoints[::-1], place_orientation, pick_orientation)
 
 
 num_stacks = 2
 for i in range(num_stacks):
     # Bottom-left
-    palletize(waypoints)
+    place_orientation = p.getQuaternionFromEuler([-math.pi/2,0,0])
+    palletize(waypoints, pick_orientation, place_orientation)
 
     # Bottom-right
     waypoints[-1][0] += box_x_len
-    palletize(waypoints)
+    place_orientation = p.getQuaternionFromEuler([-math.pi/2,0,math.pi/2])
+    palletize(waypoints, pick_orientation, place_orientation)
 
     # Top-right
+    place_orientation = p.getQuaternionFromEuler([-math.pi/2,0,math.pi])
     waypoints[-1][1] += box_y_len
-    palletize(waypoints)
+    palletize(waypoints, pick_orientation, place_orientation)
 
     # Top-left
+    place_orientation = p.getQuaternionFromEuler([-math.pi/2,0,3/2 *math.pi])
     waypoints[-1][0] -= box_x_len
-    palletize(waypoints)
+    palletize(waypoints, pick_orientation, place_orientation)
 
     # Move up for next layer
     waypoints[-1][1] -= box_y_len
