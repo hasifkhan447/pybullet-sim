@@ -51,6 +51,31 @@ def lowpass_filter(data, cutoff=5, fs=240, order=2):
 
 
 
+def plan_segment(start, end):
+    direction = end - start
+    distance = np.linalg.norm(direction)
+    direction /= distance
+
+    steps = int(distance / (velocity * dt))
+    step_array = np.linspace(0, distance, steps)
+    segment = start[None, :] + direction[None, :] * step_array[:, None]
+    return segment.tolist()
+
+# for i in range (len(waypoints)-1):
+#     start = np.array(waypoints[i])
+#     end = np.array(waypoints[i + 1])
+#     direction = end - start
+#     distance = np.linalg.norm(direction)
+#     direction /= distance
+#
+#     steps = int(distance / (velocity * dt))
+#     for step in range(steps):
+#         pos = start + direction * (velocity * dt * step)
+#         full_trajectory.append(pos.tolist())
+#
+
+
+
 # --- Define 3 Cartesian waypoints ---
 waypoints = np.array([
     [1, 0, 0.5],
@@ -93,46 +118,39 @@ full_trajectory = []
 #         steps=steps
 #     )
 #     full_trajectory.append(traj)
-#
 
 # --- Generate trajectory ---
-for i in range(len(waypoints) - 1):
-    start = np.array(waypoints[i])
-    end = np.array(waypoints[i + 1])
-    direction = end - start
-    distance = np.linalg.norm(direction)
-    direction /= distance
+# for i in range(len(waypoints) - 1):
 
-    steps = int(distance / (velocity * dt))
-    for step in range(steps):
-        pos = start + direction * (velocity * dt * step)
-        full_trajectory.append(pos.tolist())
+# full_trajectory.append(waypoints[-1])
 
-full_trajectory.append(waypoints[-1])
-
-trajectory = np.vstack(full_trajectory)  # shape: (steps * (n-1), 3)
-trajectory_filtered = lowpass_filter(trajectory, cutoff=5, fs=steps_per_second)
-trajecotry = trajectory_filtered
+# trajectory = np.vstack(full_trajectory)  # shape: (steps * (n-1), 3)
+# trajectory_filtered = lowpass_filter(trajectory, cutoff=5, fs=steps_per_second)
+# trajecotry = trajectory_filtered
 
 
-for point in waypoints:
-    p.addUserDebugLine(point, point + np.array([0, 0, 0.1]), [0, 1, 0], lineWidth=50, lifeTime=0)
+# for point in waypoints:
+#     p.addUserDebugLine(point, point + np.array([0, 0, 0.1]), [0, 1, 0], lineWidth=50, lifeTime=0)
+#
+#
+# # --- Visualize Trajectory as Arc ---
+# for i in range(len(trajectory) - 1):
+#     p.addUserDebugLine(trajectory[i], trajectory[i + 1], [1, 0, 0], lineWidth=2, lifeTime=0)
+
+# initial_angles = p.calculateInverseKinematics(robotId, num_joints-1, trajectory[0])
+#
+# p.setJointMotorControlArray(
+#     robotId, joint_indices, p.POSITION_CONTROL, targetPositions=initial_angles,
+# )
 
 
-# --- Visualize Trajectory as Arc ---
-for i in range(len(trajectory) - 1):
-    p.addUserDebugLine(trajectory[i], trajectory[i + 1], [1, 0, 0], lineWidth=2, lifeTime=0)
-
-states = []
-initial_angles = p.calculateInverseKinematics(robotId, num_joints-1, trajectory[0])
-
-kp = 0.5
-kd = 0.5
+initial_angles = p.calculateInverseKinematics(robotId, num_joints-1, waypoints[0])
 
 p.setJointMotorControlArray(
-    robotId, joint_indices, p.POSITION_CONTROL, targetPositions=initial_angles,
-    # positionGains=[kp]*len(joint_indices),
-    # velocityGains=[kd]*len(joint_indices),
+    robotId,
+    joint_indices,
+    p.POSITION_CONTROL,
+    targetPositions=initial_angles
 )
 
 for _ in range(int(0.4 *steps_per_second)):  # let it settle
@@ -140,33 +158,30 @@ for _ in range(int(0.4 *steps_per_second)):  # let it settle
     time.sleep(dt)
 
 
+states = []
+
 # --- Execute Trajectory ---
-for pos in trajectory:
-    # lower_limits = [-3.14] * num_joints
-    # upper_limits = [3.14] * num_joints
-    # joint_ranges = [6.28] * num_joints
-    # rest_poses   = [1.0] * (num_joints - 1) + [1.0]  # encourage last joint movement
+for i in range(len(waypoints)-1):
+    segment_trajectory = plan_segment(waypoints[i], waypoints[i+1])
+    for point in segment_trajectory:
+        joint_angles = p.calculateInverseKinematics(
+            robotId,
+            num_joints - 1,
+            point,
+            maxNumIterations=1000,
+            residualThreshold=1e-4
+        )
 
-    joint_angles = p.calculateInverseKinematics(
-        robotId,
-        num_joints - 1,
-        pos,
-        maxNumIterations=1000,
-        residualThreshold=1e-4
-    )
+        p.setJointMotorControlArray(
+            robotId,
+            joint_indices,
+            p.POSITION_CONTROL,
+            targetPositions=joint_angles
+        )
 
-    p.setJointMotorControlArray(
-        robotId,
-        joint_indices,
-        p.POSITION_CONTROL,
-        targetPositions=joint_angles,
-        # positionGains=[kp]*len(joint_indices),
-        # velocityGains=[kd]*len(joint_indices),
-    )
-
-    p.stepSimulation()
-    states.append(p.getJointStates(robotId, joint_indices))
-    time.sleep(dt)
+        p.stepSimulation()
+        states.append(p.getJointStates(robotId, joint_indices))
+        time.sleep(dt)
 
 
 positions = np.array([[s[i][0] for i in range(len(s))] for s in states])  # shape (timesteps, joints)
