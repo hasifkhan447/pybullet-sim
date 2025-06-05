@@ -29,6 +29,40 @@ robotId = p.loadURDF(
 num_joints = p.getNumJoints(robotId)
 joint_indices = [i for i in range(num_joints)]
 
+
+def axiscreator(bodyId, linkId = -1):
+    # print(f'axis creator at bodyId = {bodyId} and linkId = {linkId} as XYZ->RGB')
+    x_axis = p.addUserDebugLine(lineFromXYZ = [0, 0, 0] ,
+                                lineToXYZ = [0.1, 0, 0],
+                                lineColorRGB = [1, 0, 0] ,
+                                lineWidth = 0.1 ,
+                                lifeTime = 0 ,
+                                parentObjectUniqueId = bodyId ,
+                                parentLinkIndex = linkId )
+
+    y_axis = p.addUserDebugLine(lineFromXYZ          = [0, 0, 0]  ,
+                                lineToXYZ            = [0, 0.1, 0],
+                                lineColorRGB         = [0, 1, 0]  ,
+                                lineWidth            = 0.1        ,
+                                lifeTime             = 0          ,
+                                parentObjectUniqueId = bodyId     ,
+                                parentLinkIndex      = linkId     )
+
+    z_axis = p.addUserDebugLine(lineFromXYZ          = [0, 0, 0]  ,
+                                lineToXYZ            = [0, 0, 0.1],
+                                lineColorRGB         = [0, 0, 1]  ,
+                                lineWidth            = 0.1        ,
+                                lifeTime             = 0          ,
+                                parentObjectUniqueId = bodyId     ,
+                                parentLinkIndex      = linkId     )
+    return [x_axis, y_axis, z_axis]
+
+
+
+
+
+
+
 def plan_segment(start, end):
     direction = end - start
     distance = np.linalg.norm(direction)
@@ -40,7 +74,7 @@ def plan_segment(start, end):
     return segment.tolist()
 
 waypoints = np.array([
-    [1, 0, 0.27],
+    [1, 0, 0.7],
     [0.5, 0.7, 1],
     [-1, 0.6, 2],
 ])
@@ -48,13 +82,24 @@ waypoints = np.array([
 effector_link_index = num_joints - 1  # assuming last link is the gripper
 
 def pickBox(boxId):
-    cube_orn = p.getQuaternionFromEuler([math.pi, 0, 0])
-    boxCID = p.createConstraint(robotId, effector_link_index, boxId, -1, p.JOINT_FIXED, [0, 0, 0], [0, 0, 0.05], [0, 0, 0], childFrameOrientation=cube_orn)
+    _, eff_orn = p.getLinkState(robotId, effector_link_index)[:2]
+    boxCID = p.createConstraint(
+        parentBodyUniqueId=robotId,
+        parentLinkIndex=effector_link_index,
+        childBodyUniqueId=boxId,
+        childLinkIndex=-1,
+        jointType=p.JOINT_FIXED,
+        jointAxis=[0, 0, 0],
+        parentFramePosition=[0, 0, 0],
+        childFramePosition=[0, 0, 0],
+        childFrameOrientation=[0,0,1,0]
+    )
+
+
     p.setCollisionFilterPair(robotId, boxId, effector_link_index, -1, enableCollision=0)
 
     return boxCID
 
-boxId = p.loadURDF("box.urdf", waypoints[0])
 # waypoints *= 0.5
 steps_per_second = 500
 
@@ -65,11 +110,15 @@ p.setTimeStep(dt)
 
 full_trajectory = []
 
-orientation = p.getQuaternionFromEuler([0, 0, math.pi])
+
+boxId = p.loadURDF("box.urdf", waypoints[0])
+
+orientation = p.getQuaternionFromEuler([-math.pi/2,0,0])
 initial_angles = p.calculateInverseKinematics(
     bodyUniqueId=robotId,
-    endEffectorLinkIndex=num_joints-1,
+    endEffectorLinkIndex=effector_link_index,
     targetPosition=waypoints[0],
+    targetOrientation=orientation
 )
 
 p.setJointMotorControlArray(
@@ -79,10 +128,6 @@ p.setJointMotorControlArray(
     targetPositions=initial_angles
 )
 
-for _ in range(5*int(steps_per_second)):  # let it settle
-    p.stepSimulation()
-
-pickBox(boxId)
 states = []
 
 # --- Execute Trajectory ---
@@ -96,11 +141,11 @@ for i in range(len(waypoints)-1):
     prev_point = waypoints[i]
 
     for point in segment_trajectory:
-
         joint_angles = p.calculateInverseKinematics(
             bodyUniqueId=robotId,
             endEffectorLinkIndex=effector_link_index,
             targetPosition=point,
+            targetOrientation=orientation,
             maxNumIterations=1000,
             residualThreshold=1e-4
         )
