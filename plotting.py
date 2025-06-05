@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import pybullet as p
 import numpy as np
-
+from scipy.signal import butter, filtfilt
 def plot_system(positions, velocities, accelerations, torques, motor_torques, time_axis, dt, num_joints):
     plt.figure(figsize=(10, 8))
     plt.subplot(5, 1, 1)
