@@ -33,42 +33,17 @@ robotId = p.loadURDF(
 )
 
 
+steps_per_second = 500
+
+dt = 1.0 / steps_per_second
+velocity = 1
+
+p.setTimeStep(dt)
+
 
 # --- Joint Info ---
 num_joints = p.getNumJoints(robotId)
 joint_indices = [i for i in range(num_joints)]
-
-
-def axiscreator(bodyId, linkId = -1):
-    # print(f'axis creator at bodyId = {bodyId} and linkId = {linkId} as XYZ->RGB')
-    x_axis = p.addUserDebugLine(lineFromXYZ = [0, 0, 0] ,
-                                lineToXYZ = [0.1, 0, 0],
-                                lineColorRGB = [1, 0, 0] ,
-                                lineWidth = 0.1 ,
-                                lifeTime = 0 ,
-                                parentObjectUniqueId = bodyId ,
-                                parentLinkIndex = linkId )
-
-    y_axis = p.addUserDebugLine(lineFromXYZ          = [0, 0, 0]  ,
-                                lineToXYZ            = [0, 0.1, 0],
-                                lineColorRGB         = [0, 1, 0]  ,
-                                lineWidth            = 0.1        ,
-                                lifeTime             = 0          ,
-                                parentObjectUniqueId = bodyId     ,
-                                parentLinkIndex      = linkId     )
-
-    z_axis = p.addUserDebugLine(lineFromXYZ          = [0, 0, 0]  ,
-                                lineToXYZ            = [0, 0, 0.1],
-                                lineColorRGB         = [0, 0, 1]  ,
-                                lineWidth            = 0.1        ,
-                                lifeTime             = 0          ,
-                                parentObjectUniqueId = bodyId     ,
-                                parentLinkIndex      = linkId     )
-    return [x_axis, y_axis, z_axis]
-
-
-
-
 
 
 
@@ -85,7 +60,7 @@ def plan_segment_constant_velocity(start, end):
 
 
 
-def plan_segment_quintic(start, end, duration=1.0, dt=0.01):
+def plan_segment_quintic(start, end, duration=1.0, dt=dt):
     t = np.arange(0, duration + dt, dt)
     T = duration
 
@@ -104,6 +79,40 @@ def plan_segment_quintic(start, end, duration=1.0, dt=0.01):
 
     return segment.tolist()
 
+
+def go_through_waypoints(waypoints):
+    for i in range(len(waypoints)-1):
+        # segment_trajectory = plan_segment_constant_velocity(waypoints[i], waypoints[i+1])
+        segment_trajectory = plan_segment_quintic(waypoints[i], waypoints[i+1], duration=1)
+
+
+        prev_point = waypoints[i]
+        for point_idx in range(len(segment_trajectory)):
+            if point_idx % 10 == 0:
+                point = segment_trajectory[point_idx]
+                p.addUserDebugLine(prev_point, point, [1, 0, 0], lineWidth=2, lifeTime=0)
+                prev_point = point
+
+        for point in segment_trajectory:
+            joint_angles = p.calculateInverseKinematics(
+                bodyUniqueId=robotId,
+                endEffectorLinkIndex=effector_link_index,
+                targetPosition=point,
+                targetOrientation=orientation,
+                maxNumIterations=1000,
+                residualThreshold=1e-4
+            )
+
+            p.setJointMotorControlArray(
+                robotId,
+                joint_indices,
+                p.POSITION_CONTROL,
+                targetPositions=joint_angles
+            )
+
+            p.stepSimulation()
+            time.sleep(dt)
+            states.append(p.getJointStates(robotId, joint_indices))
 
 waypoints = np.array([
     [0.7, 0, 0.5],
@@ -131,15 +140,14 @@ def pickBox(boxId):
 
     p.setCollisionFilterPair(robotId, boxId, effector_link_index, -1, enableCollision=0)
 
+    for i in range(int(steps_per_second)):
+        p.stepSimulation()
     return boxCID
 
-# waypoints *= 0.5
-steps_per_second = 500
+def dropBox(boxCID):
+    p.removeConstraint(boxCID)
 
-dt = 1.0 / steps_per_second
-velocity = 1
 
-p.setTimeStep(dt)
 
 full_trajectory = []
 
@@ -161,10 +169,6 @@ p.setJointMotorControlArray(
     targetPositions=initial_angles
 )
 
-pickBox(boxId)
-
-for i in range(int(steps_per_second)):
-    p.stepSimulation()
 
 states = []
 
@@ -173,39 +177,13 @@ for i in range(len(waypoints)-1):
 
 
 
-# --- Execute Trajectory ---
-for i in range(len(waypoints)-1):
-    segment_trajectory = plan_segment_constant_velocity(waypoints[i], waypoints[i+1])
-    # segment_trajectory = plan_segment_quintic(waypoints[i], waypoints[i+1])
+boxCID = pickBox(boxId)
 
+go_through_waypoints(waypoints)
 
-    prev_point = waypoints[i]
-    for point_idx in range(len(segment_trajectory)):
-        if point_idx % 10 == 0:
-            point = segment_trajectory[point_idx]
-            p.addUserDebugLine(prev_point, point, [1, 0, 0], lineWidth=2, lifeTime=0)
-            prev_point = point
-
-    for point in segment_trajectory:
-        joint_angles = p.calculateInverseKinematics(
-            bodyUniqueId=robotId,
-            endEffectorLinkIndex=effector_link_index,
-            targetPosition=point,
-            targetOrientation=orientation,
-            maxNumIterations=1000,
-            residualThreshold=1e-4
-        )
-
-        p.setJointMotorControlArray(
-            robotId,
-            joint_indices,
-            p.POSITION_CONTROL,
-            targetPositions=joint_angles
-        )
-
-        p.stepSimulation()
-        time.sleep(dt)
-        states.append(p.getJointStates(robotId, joint_indices))
+dropBox(boxCID)
+for i in range(int(steps_per_second)):
+    p.stepSimulation()
 
 
 positions = np.array([[s[i][0] for i in range(len(s))] for s in states])  # shape (timesteps, joints)
