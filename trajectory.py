@@ -28,7 +28,7 @@ planeId = p.loadURDF("plane.urdf")
 robotId = p.loadURDF(
     "./larger-arm/urdf/larger-arm.urdf",
     basePosition=[0, 0, 0],
-    baseOrientation=[0, 0, 0, 1],
+    # baseOrientation=[0, 0, 0, 1],
     useFixedBase=True
 )
 
@@ -129,15 +129,17 @@ def pickBox(boxId):
         jointAxis=[0, 0, 0],
         parentFramePosition=[0, 0.05, 0],
         childFramePosition=[0, 0, 0],
-        childFrameOrientation=p.getQuaternionFromEuler([math.pi/2,0,0])
+        childFrameOrientation=p.getQuaternionFromEuler([-math.pi/2,0,0])
     )
-
 
     p.setCollisionFilterPair(robotId, boxId, effector_link_index, -1, enableCollision=0)
 
     for i in range(int(steps_per_second)):
         p.stepSimulation()
     return boxCID
+
+
+
 
 def dropBox(boxCID):
     p.removeConstraint(boxCID)
@@ -181,12 +183,12 @@ for i in range(len(waypoints)):
     p.addUserDebugLine(waypoints[i], waypoints[i] + np.array([0, 0, 0.1]), [0, 1, 0], lineWidth=50, lifeTime=0)
 
 
-
-
-
-
 def palletize(waypoints):
-    boxId = p.loadURDF("box.urdf", [0.7, 0.5, 0.3])
+    boxId = p.loadURDF("box.urdf", waypoints[0])
+
+    for i in range(int(steps_per_second)):
+        p.stepSimulation()
+
 
     boxCID = pickBox(boxId)
     go_through_waypoints(waypoints)
@@ -194,12 +196,7 @@ def palletize(waypoints):
     go_through_waypoints(waypoints[::-1])
 
 
-
-
-
-
-
-num_stacks = 6
+num_stacks = 2
 for i in range(num_stacks):
     # Bottom-left
     palletize(waypoints)
