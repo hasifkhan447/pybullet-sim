@@ -20,7 +20,8 @@ p.setAdditionalSearchPath(pybullet_data.getDataPath())
 planeId = p.loadURDF("plane.urdf")
 
 # robotId = p.loadURDF("kuka_iiwa/model.urdf", useFixedBase=True)
-robotId = p.loadURDF("./final_arm_material/urdf/final_arm_material.urdf", useFixedBase=True)
+robotId = p.loadURDF("./arm/urdf/arm.urdf", useFixedBase=True)
+
 
 # --- Joint Info ---
 num_joints = p.getNumJoints(robotId)
@@ -78,11 +79,14 @@ waypoints = np.array([
     [-1, 0.6, 2],
 ])
 
-duration_per_segment = 1  # seconds per segment
+# waypoints *= 0.5
+
+duration_per_segment = 1.5  # seconds per segment
 steps_per_second = 240
 steps = int(duration_per_segment * steps_per_second)
 
 def get_boundary_conditions(i, waypoints):
+    return np.zeros(3), np.zeros(3)
     if i == 0:
         return np.zeros(3), np.zeros(3)  # start
     elif i == len(waypoints) - 1:
@@ -136,8 +140,8 @@ kd = 0.5
 
 p.setJointMotorControlArray(
     robotId, joint_indices, p.POSITION_CONTROL, targetPositions=initial_angles,
-    positionGains=[kp]*len(joint_indices),
-    velocityGains=[kd]*len(joint_indices),
+    # positionGains=[kp]*len(joint_indices),
+    # velocityGains=[kd]*len(joint_indices),
 )
 
 for _ in range(int(0.4 *steps_per_second)):  # let it settle
@@ -156,7 +160,7 @@ for pos in trajectory:
         robotId,
         num_joints - 1,
         pos,
-        maxNumIterations=400,
+        maxNumIterations=1000,
         residualThreshold=1e-4
     )
 
@@ -165,8 +169,8 @@ for pos in trajectory:
         joint_indices,
         p.POSITION_CONTROL,
         targetPositions=joint_angles,
-        positionGains=[kp]*len(joint_indices),
-        velocityGains=[kd]*len(joint_indices),
+        # positionGains=[kp]*len(joint_indices),
+        # velocityGains=[kd]*len(joint_indices),
     )
 
     p.stepSimulation()

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8.3)
 
-project(final_arm_material)
+project(arm)
 
 find_package(catkin REQUIRED)
 
