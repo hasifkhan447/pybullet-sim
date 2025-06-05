@@ -48,21 +48,6 @@ p.setTimeStep(dt)
 num_joints = p.getNumJoints(robotId)
 joint_indices = [i for i in range(num_joints)]
 
-
-
-def plan_segment_constant_velocity(start, end):
-    direction = end - start
-    distance = np.linalg.norm(direction)
-    direction /= distance
-
-    steps = int(distance / (velocity * dt))
-    step_array = np.linspace(0, distance, steps)
-    segment = start[None, :] + direction[None, :] * step_array[:, None]
-    return segment.tolist()
-
-
-
-
 def plan_segment_quintic(start, end, duration=1.0, dt=dt):
     t = np.arange(0, duration + dt, dt)
     T = duration
@@ -82,7 +67,7 @@ def plan_segment_quintic(start, end, duration=1.0, dt=dt):
 
     return segment.tolist()
 
-def plan_segment_quintic_with_orientation(start_pos, end_pos, start_quat, end_quat, duration=1.0, dt=0.01):
+def plan_segment_quintic_with_orientation(start_pos, end_pos, start_quat, end_quat, duration=1.0, dt=dt):
     t = np.arange(0, duration + dt, dt)
     T = duration
 
@@ -114,11 +99,11 @@ def go_through_waypoints(waypoints, pick_orientation, place_orientation):
         # segment_trajectory = plan_segment_constant_velocity(waypoints[i], waypoints[i+1])
         # segment_trajectory = plan_segment_quintic(waypoints[i], waypoints[i+1], duration=1)
 
-        if i == len(waypoints) - 2:
+        if i == 0:
             print("Rotating rq")
             segment_trajectory, orientations = plan_segment_quintic_with_orientation(waypoints[i], waypoints[i+1], pick_orientation, place_orientation, duration=1)
         else:
-            segment_trajectory, orientations = plan_segment_quintic_with_orientation(waypoints[i], waypoints[i+1], pick_orientation, pick_orientation, duration=1)
+            segment_trajectory, orientations = plan_segment_quintic_with_orientation(waypoints[i], waypoints[i+1], place_orientation, place_orientation, duration=1)
 
 
 
@@ -186,14 +171,15 @@ def dropBox(boxCID):
 
 full_trajectory = []
 
-box_x_len = 0.43
-box_y_len = 0.35
-box_z_len = 0.28
+box_x_len = 0.43 + 0.25
+box_y_len = 0.35 + 0.25
+box_z_len = 0.28 + 0.1
 
 
 waypoints = np.array([
     [0.7, 0.5, 0.5],
     [0.3, 1, 1],
+    [-0.4, 0.8, 1.3],
     [-1.2, 0.7, box_z_len+0.04],
 ])
 
@@ -220,9 +206,9 @@ for i in range(len(waypoints)):
 
 
 def palletize(waypoints, pick_orientation, place_orientation):
-    boxId = p.loadURDF("box.urdf", waypoints[0])
+    boxId = p.loadURDF("box.urdf", [0.7,0.5,0.3])
 
-    for i in range(int(steps_per_second)):
+    for i in range(2*int(steps_per_second)):
         p.stepSimulation()
 
 
