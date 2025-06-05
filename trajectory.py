@@ -95,6 +95,11 @@ def plan_segment_quintic_with_orientation(start_pos, end_pos, start_quat, end_qu
 
 
 def go_through_waypoints(waypoints, pick_orientation, place_orientation):
+
+    for i in range(len(waypoints)):
+        p.addUserDebugLine(waypoints[i], waypoints[i] + np.array([0, 0, 0.1]), [0, 1, 0], lineWidth=50, lifeTime=0)
+
+
     for i in range(len(waypoints)-1):
         # segment_trajectory = plan_segment_constant_velocity(waypoints[i], waypoints[i+1])
         # segment_trajectory = plan_segment_quintic(waypoints[i], waypoints[i+1], duration=1)
@@ -148,12 +153,13 @@ def pickBox(boxId):
         childLinkIndex=-1,
         jointType=p.JOINT_FIXED,
         jointAxis=[0, 0, 0],
-        parentFramePosition=[0, 0.05, 0],
+        parentFramePosition=[0, 0.15, 0],
         childFramePosition=[0, 0, 0],
         childFrameOrientation=p.getQuaternionFromEuler([-math.pi/2,0,0])
     )
 
     p.setCollisionFilterPair(robotId, boxId, effector_link_index, -1, enableCollision=0)
+    p.setCollisionFilterPair(robotId, boxId, effector_link_index-1, -1, enableCollision=0)
 
     for i in range(int(steps_per_second)):
         p.stepSimulation()
@@ -171,17 +177,19 @@ def dropBox(boxCID):
 
 full_trajectory = []
 
-box_x_len = 0.43 + 0.25
-box_y_len = 0.35 + 0.25
-box_z_len = 0.28 + 0.1
+box_x_len = 0.43 + 0.05
+box_y_len = 0.35 + 0.05
+box_z_len = 0.28 
 
 
 waypoints = np.array([
     [0.7, 0.5, 0.5],
-    [0.3, 1, 1],
-    [-0.4, 0.8, 1.3],
-    [-1.2, 0.7, box_z_len+0.04],
+    [-0.4, 0.8, 2],
+    [-1.2, 0.7, box_z_len+ 0.04],
 ])
+
+normal_waypoint_3 = [-0.4, 0.8,2]
+alternative_waypoint_3 = [-0.8, 1.4, 2]
 
 pick_orientation = p.getQuaternionFromEuler([-math.pi/2,0,0])
 initial_angles = p.calculateInverseKinematics(
@@ -201,9 +209,6 @@ p.setJointMotorControlArray(
 
 states = []
 
-for i in range(len(waypoints)):
-    p.addUserDebugLine(waypoints[i], waypoints[i] + np.array([0, 0, 0.1]), [0, 1, 0], lineWidth=50, lifeTime=0)
-
 
 def palletize(waypoints, pick_orientation, place_orientation):
     boxId = p.loadURDF("box.urdf", [0.7,0.5,0.3])
@@ -218,30 +223,48 @@ def palletize(waypoints, pick_orientation, place_orientation):
     go_through_waypoints(waypoints[::-1], place_orientation, pick_orientation)
 
 
-num_stacks = 2
+num_stacks = 6
 for i in range(num_stacks):
-    # Bottom-left
-    place_orientation = p.getQuaternionFromEuler([-math.pi/2,0,0])
-    palletize(waypoints, pick_orientation, place_orientation)
-
-    # Bottom-right
+# Bottom-right
     waypoints[-1][0] += box_x_len
-    place_orientation = p.getQuaternionFromEuler([-math.pi/2,0,math.pi/2])
+    waypoints[-2] = normal_waypoint_3
+    waypoints[-2][0] += box_x_len - 0.4
+    waypoints[-2][2] = waypoints[-1][2] + 0.7
+    place_orientation = p.getQuaternionFromEuler([-np.pi/2, 0, np.pi/2])
     palletize(waypoints, pick_orientation, place_orientation)
 
-    # Top-right
-    place_orientation = p.getQuaternionFromEuler([-math.pi/2,0,math.pi])
-    waypoints[-1][1] += box_y_len
-    palletize(waypoints, pick_orientation, place_orientation)
-
-    # Top-left
-    place_orientation = p.getQuaternionFromEuler([-math.pi/2,0,3/2 *math.pi])
+# Bottom-left
     waypoints[-1][0] -= box_x_len
+    waypoints[-2] = normal_waypoint_3
+    waypoints[-2][0] -= box_x_len + 0.4
+    waypoints[-2][2] = waypoints[-1][2] + 0.7
+    place_orientation = p.getQuaternionFromEuler([-np.pi/2, 0, 0])
     palletize(waypoints, pick_orientation, place_orientation)
 
-    # Move up for next layer
+# Top-left
+    waypoints[-1][1] += box_y_len
+    waypoints[-2] = alternative_waypoint_3
+    waypoints[-2][1] += box_y_len - 0.4
+    waypoints[-2][2] = waypoints[-1][2] + 0.7
+    place_orientation = p.getQuaternionFromEuler([-np.pi/2, 0, -np.pi/2])
+    palletize(waypoints, pick_orientation, place_orientation)
+
+# Top-right
+    waypoints[-1][0] += box_x_len
+    waypoints[-2] = alternative_waypoint_3
+    waypoints[-2][0] += box_x_len - 0.4
+    waypoints[-2][2] = waypoints[-1][2] + 0.7
+    place_orientation = p.getQuaternionFromEuler([-np.pi/2, 0, -np.pi])
+    palletize(waypoints, pick_orientation, place_orientation)
+
+# Move up for next layer
+    waypoints[-1][0] -= box_x_len
     waypoints[-1][1] -= box_y_len
     waypoints[-1][2] += box_z_len
+
+
+
+
 
 
 
