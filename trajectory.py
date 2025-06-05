@@ -90,8 +90,56 @@ def plan_segment_quintic_with_orientation(start_pos, end_pos, start_quat, end_qu
 
     return segment.tolist(), orientations.tolist()
 
+def plan_sextic_with_waypoint_scaled(start_pos, end_pos, start_vel, end_vel, start_acc, end_acc,
+                              waypoint_time, waypoint_pos, scale=1.0, dt=dt,
+                              start_quat=None, end_quat=None):
+    import numpy as np
+    from scipy.linalg import solve
+    from scipy.spatial.transform import Rotation as R, Slerp
 
+    # Always compute coefficients for duration=1 (normalized time)
+    T = 1.0
+    tm = waypoint_time  # waypoint time normalized (0 < tm < 1)
+    pm = np.array(waypoint_pos)
 
+    def make_matrix(T, tm):
+        return np.array([
+            [1,     0,      0,          0,           0,           0,           0],    # p(0)
+            [0,     1,      0,          0,           0,           0,           0],    # v(0)
+            [0,     0,      2,          0,           0,           0,           0],    # a(0)
+            [1,     T,      T**2,       T**3,        T**4,        T**5,        T**6], # p(T)
+            [0,     1,      2*T,        3*T**2,      4*T**3,      5*T**4,      6*T**5], # v(T)
+            [0,     0,      2,          6*T,         12*T**2,     20*T**3,     30*T**4],# a(T)
+            [1,     tm,     tm**2,      tm**3,       tm**4,       tm**5,       tm**6], # p(tm)
+        ])
+
+    A = make_matrix(T, tm)
+
+    coeffs = []
+    for i in range(3):
+        b = np.array([start_pos[i], start_vel[i], start_acc[i],
+                      end_pos[i], end_vel[i], end_acc[i],
+                      pm[i]])
+        coeffs.append(solve(A, b))
+    coeffs = np.array(coeffs)  # shape (3,7)
+
+    # Generate time vector for scaled duration
+    t_scaled = np.arange(0, scale + dt, dt)  # actual times for scaled motion
+    t_norm = t_scaled / scale  # normalized time used for polynomial evaluation
+
+    # Evaluate polynomial at normalized time points
+    powers = np.vstack([t_norm**i for i in range(7)])
+    segment = (coeffs @ powers).T  # shape (len(t_norm), 3)
+
+    if start_quat is not None and end_quat is not None:
+        key_times = [0, scale]
+        rotations = R.from_quat([start_quat, end_quat])
+        slerp = Slerp(key_times, rotations)
+        s_times = np.clip(t_scaled, 0, scale)
+        orientations = slerp(s_times).as_quat()
+        return segment.tolist(), orientations.tolist()
+    else:
+        return segment.tolist()
 
 
 def go_through_waypoints(waypoints, pick_orientation, place_orientation):
@@ -100,45 +148,50 @@ def go_through_waypoints(waypoints, pick_orientation, place_orientation):
         p.addUserDebugLine(waypoints[i], waypoints[i] + np.array([0, 0, 0.1]), [0, 1, 0], lineWidth=50, lifeTime=0)
 
 
-    for i in range(len(waypoints)-1):
         # segment_trajectory = plan_segment_constant_velocity(waypoints[i], waypoints[i+1])
         # segment_trajectory = plan_segment_quintic(waypoints[i], waypoints[i+1], duration=1)
 
-        if i == 0:
-            print("Rotating rq")
-            segment_trajectory, orientations = plan_segment_quintic_with_orientation(waypoints[i], waypoints[i+1], pick_orientation, place_orientation, duration=1)
-        else:
-            segment_trajectory, orientations = plan_segment_quintic_with_orientation(waypoints[i], waypoints[i+1], place_orientation, place_orientation, duration=1)
+    segment_trajectory, orientations = plan_sextic_with_waypoint_scaled(start_pos=waypoints[0], 
+                                                                 end_pos=waypoints[2],
+                                                                 start_vel=[0,0,0],
+                                                                 end_vel=[0,0,0],
+                                                                 start_acc=[0,0,0],
+                                                                 end_acc=[0,0,0],
+                                                                 waypoint_time=0.5,
+                                                                 waypoint_pos=waypoints[1],
+                                                                 scale=2.5,
+                                                                 dt=dt,
+                                                                 start_quat=pick_orientation,
+                                                                 end_quat=place_orientation)
 
 
+    prev_point = waypoints[i]
+    for point_idx in range(len(segment_trajectory)):
+        if point_idx % 100 == 0:
+            point = segment_trajectory[point_idx]
+            p.addUserDebugLine(prev_point, point, [1, 0, 0], lineWidth=2, lifeTime=0)
+            prev_point = point
 
-        prev_point = waypoints[i]
-        for point_idx in range(len(segment_trajectory)):
-            if point_idx % 10 == 0:
-                point = segment_trajectory[point_idx]
-                p.addUserDebugLine(prev_point, point, [1, 0, 0], lineWidth=2, lifeTime=0)
-                prev_point = point
+    for idx in range(len(segment_trajectory)):
+        joint_angles = p.calculateInverseKinematics(
+            bodyUniqueId=robotId,
+            endEffectorLinkIndex=effector_link_index,
+            targetPosition=segment_trajectory[idx],
+            targetOrientation=orientations[idx],
+            maxNumIterations=1000,
+            residualThreshold=1e-4
+        )
 
-        for idx in range(len(segment_trajectory)):
-            joint_angles = p.calculateInverseKinematics(
-                bodyUniqueId=robotId,
-                endEffectorLinkIndex=effector_link_index,
-                targetPosition=segment_trajectory[idx],
-                targetOrientation=orientations[idx],
-                maxNumIterations=1000,
-                residualThreshold=1e-4
-            )
+        p.setJointMotorControlArray(
+            robotId,
+            joint_indices,
+            p.POSITION_CONTROL,
+            targetPositions=joint_angles
+        )
 
-            p.setJointMotorControlArray(
-                robotId,
-                joint_indices,
-                p.POSITION_CONTROL,
-                targetPositions=joint_angles
-            )
-
-            p.stepSimulation()
-            time.sleep(dt)
-            states.append(p.getJointStates(robotId, joint_indices))
+        p.stepSimulation()
+        time.sleep(dt)
+        states.append(p.getJointStates(robotId, joint_indices))
 
 
 
@@ -189,7 +242,7 @@ waypoints = np.array([
 ])
 
 normal_waypoint_3 = [-0.4, 0.8,2]
-alternative_waypoint_3 = [-0.8, 1.4, 2]
+alternative_waypoint_3 = [-0.4, 1.3, 2]
 
 pick_orientation = p.getQuaternionFromEuler([-math.pi/2,0,0])
 initial_angles = p.calculateInverseKinematics(
@@ -223,7 +276,7 @@ def palletize(waypoints, pick_orientation, place_orientation):
     go_through_waypoints(waypoints[::-1], place_orientation, pick_orientation)
 
 
-num_stacks = 6
+num_stacks = 2
 for i in range(num_stacks):
 # Bottom-right
     waypoints[-1][0] += box_x_len
