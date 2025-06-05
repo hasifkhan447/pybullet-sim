@@ -163,6 +163,14 @@ states = []
 # --- Execute Trajectory ---
 for i in range(len(waypoints)-1):
     segment_trajectory = plan_segment(waypoints[i], waypoints[i+1])
+
+    p.addUserDebugLine(waypoints[i], waypoints[i] + np.array([0, 0, 0.1]), [0, 1, 0], lineWidth=50, lifeTime=0)
+    p.addUserDebugLine(waypoints[i+1], waypoints[i+1] + np.array([0, 0, 0.1]), [0, 1, 0], lineWidth=50, lifeTime=0)
+
+
+    prev_point = waypoints[i]
+
+
     for point in segment_trajectory:
         joint_angles = p.calculateInverseKinematics(
             robotId,
@@ -180,6 +188,7 @@ for i in range(len(waypoints)-1):
         )
 
         p.stepSimulation()
+        p.addUserDebugLine(prev_point, point, [1, 0, 0], lineWidth=2, lifeTime=0)
         states.append(p.getJointStates(robotId, joint_indices))
         time.sleep(dt)
 
