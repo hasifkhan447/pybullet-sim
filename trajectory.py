@@ -23,32 +23,11 @@ planeId = p.loadURDF("plane.urdf")
 robotId = p.loadURDF("./arm/urdf/arm.urdf", useFixedBase=True)
 
 
+boxId = p.loadURDF("box.urdf", [1, 0, 0.3])
+
 # --- Joint Info ---
 num_joints = p.getNumJoints(robotId)
 joint_indices = [i for i in range(num_joints)]
-
-
-# --- Define 2 Poses (start and end) in Cartesian ---
-# waypoints = np.array([
-#     [1, 0, 0.5],
-#     [0.5, 0.7, 0],
-#     [-1, 0.6, 1],
-# ])
-# print(waypoints)
-#
-#
-#
-#
-#
-# t = np.linspace(0,1,len(waypoints))
-#
-# duration = 1.0  # seconds
-# steps_per_second = 240
-# total_steps = int(duration * steps_per_second)
-# spline = make_interp_spline(t, waypoints, k=2, axis=0)
-#
-# times = np.linspace(0, 1, total_steps)
-# trajectory = spline(times)
 
 def quintic_interp(p0, p1, v0, v1, a0, a1, T, steps):
     t = np.linspace(0, T, steps)
@@ -80,10 +59,12 @@ waypoints = np.array([
 ])
 
 # waypoints *= 0.5
-
 duration_per_segment = 1.5  # seconds per segment
 steps_per_second = 240
 steps = int(duration_per_segment * steps_per_second)
+
+dt = 1.0 / steps_per_second
+velocity = 1
 
 def get_boundary_conditions(i, waypoints):
     return np.zeros(3), np.zeros(3)
@@ -99,24 +80,35 @@ def get_boundary_conditions(i, waypoints):
 
 full_trajectory = []
 
+# for i in range(len(waypoints) - 1):
+#     p0 = waypoints[i]
+#     p1 = waypoints[i+1]
+#     v0, a0 = get_boundary_conditions(i, waypoints)
+#     v1, a1 = get_boundary_conditions(i+1, waypoints)
+#     traj = quintic_interp(
+#         p0, p1,
+#         v0=v0, v1=v1,
+#         a0=a0, a1=a1,
+#         T=duration_per_segment,
+#         steps=steps
+#     )
+#     full_trajectory.append(traj)
+#
+
+# --- Generate trajectory ---
 for i in range(len(waypoints) - 1):
-    p0 = waypoints[i]
-    p1 = waypoints[i+1]
-    v0, a0 = get_boundary_conditions(i, waypoints)
-    v1, a1 = get_boundary_conditions(i+1, waypoints)
-    traj = quintic_interp(
-        p0, p1,
-        v0=v0, v1=v1,
-        a0=a0, a1=a1,
-        T=duration_per_segment,
-        steps=steps
-    )
-    full_trajectory.append(traj)
+    start = np.array(waypoints[i])
+    end = np.array(waypoints[i + 1])
+    direction = end - start
+    distance = np.linalg.norm(direction)
+    direction /= distance
 
+    steps = int(distance / (velocity * dt))
+    for step in range(steps):
+        pos = start + direction * (velocity * dt * step)
+        full_trajectory.append(pos.tolist())
 
-
-
-
+full_trajectory.append(waypoints[-1])
 
 trajectory = np.vstack(full_trajectory)  # shape: (steps * (n-1), 3)
 trajectory_filtered = lowpass_filter(trajectory, cutoff=5, fs=steps_per_second)
@@ -132,7 +124,6 @@ for i in range(len(trajectory) - 1):
     p.addUserDebugLine(trajectory[i], trajectory[i + 1], [1, 0, 0], lineWidth=2, lifeTime=0)
 
 states = []
-dt = 1.0 / steps_per_second
 initial_angles = p.calculateInverseKinematics(robotId, num_joints-1, trajectory[0])
 
 kp = 0.5
