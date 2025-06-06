@@ -2,3 +2,4 @@
 venv/*
 arm.urdf
 __pycache__/*
+*.zip

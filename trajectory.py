@@ -29,7 +29,7 @@ planeId = p.loadURDF("plane.urdf")
 #
 
 robotId = p.loadURDF(
-    "./larger-arm/urdf/larger-arm.urdf",
+    "./universal-arm/Assem1_universal/urdf/Assem1_universal.urdf",
     basePosition=[0, 0, 0],
     # baseOrientation=[0, 0, 0, 1],
     useFixedBase=True

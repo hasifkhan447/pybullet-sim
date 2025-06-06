@@ -1,14 +1,11 @@
+
 <?xml version="1.0"?>
 <robot name="box_robot">
   <link name="box_link">
-
     <inertial>
       <mass value="20"/>
       <inertia ixx="0.3409" iyy="0.4409" izz="0.5215" ixy="0" ixz="0" iyz="0"/>
     </inertial>
-
-
-
 
     <visual>
       <geometry>
@@ -18,10 +15,23 @@
         <color rgba="1 0 0 1"/>
       </material>
     </visual>
+
     <collision>
       <geometry>
         <box size="0.4318 0.3556 0.2794"/>
       </geometry>
+      <surface>
+        <friction>
+          <ode>
+            <mu>2.0</mu>
+            <mu2>2.0</mu2>
+          </ode>
+        </friction>
+        <bounce>
+          <restitution_coefficient>0.0</restitution_coefficient>
+          <threshold>1.0</threshold>
+        </bounce>
+      </surface>
     </collision>
   </link>
 </robot>
