@@ -16,15 +16,16 @@ S_y = 276e6 # Yield stress
 E = 68.9e9 # Young's modulus
 
 SF_Buckling = 100
-SF_Bending = 20
+SF_Bending = 2
+Deflection_thresh = 1e-3
 
 
 # Variables
-B = m.Var(lb=250e-3)  # Beam width (m)
-H = m.Var(lb=250e-3) # Beam height (m) 
+B = m.Var(lb=25e-3)  # Beam width (m)
+H = m.Var(lb=25e-3) # Beam height (m) 
 
-b = m.Var(lb=200e-3)  # Beam width (m)
-h = m.Var(lb=200e-3) # Beam height (m) 
+b = m.Var(lb=20e-3)  # Beam width (m)
+h = m.Var(lb=20e-3) # Beam height (m) 
 
 
 weight = m.Var(lb=0.1) # Beam weight (kg) 
@@ -61,14 +62,14 @@ m.Equations([
     weight == (B*H - b * h)* L * Rho,
     stress_y == My/S,
     stress_x == Mx/S,
-    B-b >= 0.5e-3,
-    H-h >= 0.5e-3,
+    B-b >= 5e-3,
+    H-h >= 5e-3,
     SF_Buckling * Fy <= P_cr_x,
     SF_Buckling * Fx <= P_cr_y,
     SF_Bending * stress_x <= S_y,  
     SF_Bending * stress_y <= S_y,  
-    delta_x <= 0.1e-3,
-    delta_y <= 0.1e-3
+    delta_x <= Deflection_thresh, # 1mm deflection
+    delta_y <= Deflection_thresh
 ])
 
 
@@ -86,6 +87,8 @@ print("Inner height (h): ", h[0] * 1e3, "mm")
 print("Safety factor (bending):", S_y / max(stress_x[0], stress_y[0]))
 print("Safety factor (buckling x):", P_cr_x[0] / Fy)
 print("Safety factor (buckling y):", P_cr_y[0] / Fy)
+print("Deflection (x) mm:", delta_x[0] * 1e3)
+print("Deflection (y) mm:", delta_y[0] * 1e3)
 
 
 
