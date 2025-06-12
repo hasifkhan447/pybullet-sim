@@ -8,7 +8,7 @@ from loop_rate_limiters import RateLimiter
 
 xml = """
 <mujoco>
-    <option timestep=".0001">
+    <option>
         <flag energy="enable" contact="enable"/>
     </option>
     <default>
@@ -22,25 +22,23 @@ xml = """
     <worldbody>
     <body name="arm_handle" mocap="true" pos="0.1 -0.6 0"/>
     <body name="arm" pos="0.1 -.6 0">
-        <joint name="base" type="slide" axis="0 0 1" limited="true" range="0 .7"/>
-        <geom fromto="0 0 0 0 0 .3" rgba="1 0.5 0 1"/>
-
-        <body name="0" pos="0 0 0">
-            <joint name="0" type="hinge" axis="0 0 1" limited="true" range="-3.14 1.14"/>
-                <geom fromto="0 0 0 0 0 .3" rgba="1 0.5 0 1"/>
-            <body name="1" pos="0 0 .3">
-                <joint name="1"/>
-                <geom fromto="0 0 .05 0 0 .3" rgba="0.5 0 0 1"/>
-
-
-                <body name="2" pos="0 0 .3">
-                    <joint name="2"/>
-                    <geom fromto="0 0 .05 0 0 .3" rgba="0 0.5 0 1"/>
-
-                    <body name="3" pos="0 0 .3">
-                        <joint name="3"/>
-                        <geom fromto="0 0 .05 0 0 .3" rgba="0 0 0.5 1"/>
-                        <site pos="0 0 0.045" name="ee"/>
+        <body name="base" pos="0 0 0">
+            <joint name="base" type="slide" axis="0 0 1" limited="true" range="0 .3"/>
+            <geom fromto="0 0 0 0 0 .3" rgba="1 1 1 1"/>
+            <body name="0" pos="0 0 .3">
+                <joint name="0" type="hinge" axis="0 0 1" limited="true" range="-3.14 1.14"/>
+                    <geom fromto="0 0 0 0 0 .3" rgba="1 0.5 0 1"/>
+                <body name="1" pos="0 0 .3">
+                    <joint name="1"/>
+                    <geom fromto="0 0 .05 0 0 .3" rgba="0.5 0 0 1"/>
+                    <body name="2" pos="0 0 .3">
+                        <joint name="2"/>
+                        <geom fromto="0 0 .05 0 0 .3" rgba="0 0.5 0 1"/>
+                        <body name="3" pos="0 0 .3">
+                            <joint name="3"/>
+                            <geom fromto="0 0 .05 0 0 .3" rgba="0 0 0.5 1"/>
+                            <site pos="0 0 0.345" name="attachment_site"/>
+                        </body>
                     </body>
                 </body>
             </body>
@@ -85,24 +83,18 @@ model = m.MjModel.from_xml_string(xml)
 data = m.MjData(model)
 
 
-# model.reset(step=True)
-# init_qpos = model.get_qpos_joints(joint_names=model.rev_joint_names)
-# sliders = MultiSliderClass(
-#     n_slider = m.n_rev_joint,
-#     title = "Slider",
-#     slider_vals = init_qpos,
-# )
-
-
-
 tasks = [ 
     ee_task := mink.FrameTask(
-        frame_name="ee",
+        frame_name="attachment_site",
         frame_type="site",
         position_cost=2.0,
         orientation_cost=1.0,
     ),
     # posture_task := mink.PostureTask(model=model, cost=1e-2)
+]
+
+limits = [ 
+    mink.ConfigurationLimit(model=model),
 ]
 
 solver = "daqp"
@@ -117,17 +109,30 @@ mid = model.body("arm").mocapid[0]
 
 configuration = mink.Configuration(model)
 
-with viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=False) as v:
+with viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=True) as v:
 
-    rate = RateLimiter(frequency=60.0, warn=False)
+    rate = RateLimiter(frequency=2000.0, warn=False)
     t = 0.0
 
     mink.move_mocap_to_frame(
-        model, data, "arm_handle", "ee", "site"
+        model, data, "arm_handle", "attachment_site", "site"
     )
 
+    desired_pos = np.array([0.5, 0.0, 0.4])  # your target position
+    desired_quat = np.eye(3)               # identity = no rotation
+
+
+    matrix = np.array([
+        [1, 0, 0, des[0]],
+        [0, 1, 0, des[1]],
+        [0, 0, 1, des[2]],
+        [0, 0, 0, 1]
+    ])
+
     while v.is_running():
-        T_wt = mink.SE3.from_mocap_name(model, data, "arm_handle")
+
+        # T_wt = mink.SE3.from_mocap_name(model, data, "arm_handle")
+        T_wt = mink.SE3.from_matrix(matrix)
         ee_task.set_target(T_wt)
 
         for i in range(max_iters):
@@ -137,12 +142,15 @@ with viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=False)
             configuration.integrate_inplace(vel, rate.dt)
             err = ee_task.compute_error(configuration)
             pos_achieved = np.linalg.norm(err[:3]) <= pos_thresh
-            ori_achieved = np.linalg.norm(err[:3]) <= ori_thresh
+            ori_achieved = np.linalg.norm(err[3:]) <= ori_thresh
             if pos_achieved and ori_achieved:
                 break
 
+        print(vel)
+
         data.ctrl = configuration.q 
         m.mj_step(model,data)
+
         m.mj_camlight(model, data)
         v.sync()
         rate.sleep()
