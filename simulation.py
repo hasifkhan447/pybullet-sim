@@ -14,7 +14,7 @@ xml = """
         <geom type="capsule" size=".06"/>
     </default>
     <worldbody>
-    <body name="arm" pos="0.1 -.6 .4">
+    <body name="0" pos="0.1 -.6 .4">
         <joint name="root" type="hinge" axis="0 0 1" limited="true" range="-3.14 1.14"/>
             <geom fromto="0 0 0 0 0 .3" rgba="1 0.5 0 1"/>
         <body name="1" pos="0 0 .3">
@@ -38,13 +38,13 @@ xml = """
         <geom type='box' size='.176 .215 .137' pos='0.5 0 0.5' rgba="1 1 1 1"/>
     </body>
 
+    <body name="assembly line" pos="0 0 0">
+        <geom type='box' size='.3 1 .3' pos='0.5 0 .15' rgba="1 1 0.5 1"/>
+    </body>
 
     <body name="pallet" pos="0 0 0">
         <geom type='box' size='.5 .5 .05' pos='-0.5 0 0' rgba="1 1 0 1"/>
     </body>
-
-
-
 
     </worldbody>
 
