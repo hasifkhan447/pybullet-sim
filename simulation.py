@@ -8,7 +8,7 @@ from loop_rate_limiters import RateLimiter
 
 xml = """
 <mujoco>
-    <option>
+    <option timestep="0.01">
         <flag energy="enable" contact="enable"/>
     </option>
     <default>
@@ -135,20 +135,20 @@ with viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=True) 
         T_wt = mink.SE3.from_matrix(matrix)
         ee_task.set_target(T_wt)
 
-        for i in range(max_iters):
-            vel = mink.solve_ik(
-                configuration, tasks, rate.dt, solver, 1e-4, False 
-            )
-            configuration.integrate_inplace(vel, rate.dt)
-            err = ee_task.compute_error(configuration)
-            pos_achieved = np.linalg.norm(err[:3]) <= pos_thresh
-            ori_achieved = np.linalg.norm(err[3:]) <= ori_thresh
-            if pos_achieved and ori_achieved:
-                break
+        # for i in range(max_iters):
+        #     vel = mink.solve_ik(
+        #         configuration, tasks, rate.dt, solver, 1e-4, False 
+        #     )
+        #     configuration.integrate_inplace(vel, rate.dt)
+        #     err = ee_task.compute_error(configuration)
+        #     pos_achieved = np.linalg.norm(err[:3]) <= pos_thresh
+        #     ori_achieved = np.linalg.norm(err[3:]) <= ori_thresh
+        #     if pos_achieved and ori_achieved:
+        #         break
+        
+        # print(vel)
 
-        print(vel)
-
-        data.ctrl = configuration.q 
+        # data.ctrl = configuration.q 
         m.mj_step(model,data)
 
         m.mj_camlight(model, data)
